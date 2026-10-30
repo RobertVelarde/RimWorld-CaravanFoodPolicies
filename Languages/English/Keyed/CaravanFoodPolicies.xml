@@ -11,4 +11,12 @@
   <CFP_EnableHighlightingDesc>Enables colored food policy highlights in the Assign tab.</CFP_EnableHighlightingDesc>
   <CFP_Match>Match</CFP_Match>
   <CFP_Mismatch>Mismatch</CFP_Mismatch>
+
+  <!-- Pawn Column Headers -->
+  <CFP_CurrentFoodPolicyLabel>current food policy</CFP_CurrentFoodPolicyLabel>
+  <CFP_CurrentFoodPolicyTip>The food policy currently assigned to this pawn.</CFP_CurrentFoodPolicyTip>
+  <CFP_HomeFoodPolicyLabel>home food policy</CFP_HomeFoodPolicyLabel>
+  <CFP_HomeFoodPolicyTip>The food policy this pawn will revert to when arriving at a player home map.</CFP_HomeFoodPolicyTip>
+  <CFP_CaravanFoodPolicyLabel>caravan food policy</CFP_CaravanFoodPolicyLabel>
+  <CFP_CaravanFoodPolicyTip>The food policy this pawn will automatically switch to when forming a caravan.</CFP_CaravanFoodPolicyTip>
 </LanguageData>

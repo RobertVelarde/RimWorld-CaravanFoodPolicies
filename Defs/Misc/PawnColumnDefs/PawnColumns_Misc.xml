@@ -3,18 +3,21 @@
 	<PawnColumnDef>
 		<defName>CurrentFoodPolicy</defName>
 		<workerClass>RimWorld.PawnColumnWorker_CurrentFoodPolicy</workerClass>
+		<label>current food policy</label>
 		<sortable>true</sortable>
 	</PawnColumnDef>
 
 	<PawnColumnDef>
 		<defName>HomeFoodPolicy</defName>
 		<workerClass>RimWorld.PawnColumnWorker_HomeFoodPolicy</workerClass>
+		<label>home food policy</label>
 		<sortable>true</sortable>
 	</PawnColumnDef>
 
 	<PawnColumnDef>
 		<defName>CaravanFoodPolicy</defName>
 		<workerClass>RimWorld.PawnColumnWorker_CaravanFoodPolicy</workerClass>
+		<label>caravan food policy</label>
 		<sortable>true</sortable>
 	</PawnColumnDef>
 </Defs>
