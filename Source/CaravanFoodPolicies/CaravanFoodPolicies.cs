@@ -12,13 +12,20 @@ namespace CaravanFoodPolicies
 {
     [StaticConstructorOnStartup]
     public static class CaravanFoodPolicies
-    {
-        static CaravanFoodPolicies()
-        {
-            CFPLog.Message("StartUp");
-            var harmony = new Harmony("Aeroux.CaravanFoodPolicies");
-            harmony.PatchAll();
-        }
+       {
+           static CaravanFoodPolicies()
+           {
+               CFPLog.Message("StartUp");
+               try
+               {
+                   var harmony = new Harmony("Aeroux.CaravanFoodPolicies");
+                   harmony.PatchAll();
+               }
+               catch (Exception ex)
+               {
+                   CFPLog.Error($"Error during Harmony patching: {ex}");
+               }
+           }
 
         // --- Patches ---
 
@@ -29,12 +36,9 @@ namespace CaravanFoodPolicies
             {
                 Pawn pawn = Traverse.Create(__instance).Field("pawn").GetValue<Pawn>();
                 if (pawn == null) return;
-                if (!pawn.IsCaravanMember()) return;
 
-                Caravan caravan = pawn.GetCaravan();
-                if (caravan == null) return;
-
-                caravan.RecacheInventory();
+                // Support both vanilla and vehicle caravans
+                CaravanUtils.TryRecacheCaravanInventory(pawn);
             }
         }
 
@@ -56,7 +60,7 @@ namespace CaravanFoodPolicies
             }
         }
 
-        [HarmonyPatch(typeof(Dialog_FormCaravan), "SelectApproximateBestTravelSupplies")]
+         [HarmonyPatch(typeof(Dialog_FormCaravan), "SelectApproximateBestTravelSupplies")]
         static class Dialog_FormCaravan_SelectApproximateBestTravelSupplies_Patch
         {
             [HarmonyBefore(new string[] { "SmashPhil.VehicleFramework" })]
@@ -65,9 +69,28 @@ namespace CaravanFoodPolicies
                 __state = PolicyUtils.ApplyCaravanPolicies(___transferables);
             }
 
-            static void Finalizer(Dictionary<Pawn, FoodPolicy> __state)
+            static void Finalizer(Dictionary<Pawn, FoodPolicy> __state, List<TransferableOneWay> ___transferables)
             {
                 PolicyUtils.RestorePolicies(__state);
+
+                // After restoring, immediately re-apply caravan policies to pawns that will be leaving
+                // This ensures vehicle caravans have the correct policy even if they don't use CaravanMaker.MakeCaravan
+                if (___transferables != null)
+                {
+                    foreach (var t in ___transferables)
+                    {
+                        if (t.AnyThing is Pawn pawn && t.CountToTransfer > 0 &&
+                            pawn.RaceProps.Humanlike && pawn.Faction == Faction.OfPlayer &&
+                            pawn.foodRestriction != null)
+                        {
+                            var caravanPolicy = PolicyUtils.GetStoredCaravanPolicy(pawn);
+                            if (caravanPolicy != null && pawn.foodRestriction.CurrentFoodPolicy != caravanPolicy)
+                            {
+                                pawn.foodRestriction.CurrentFoodPolicy = caravanPolicy;
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -98,6 +121,25 @@ namespace CaravanFoodPolicies
                     PolicyUtils.GetStoredHomePolicy,
                     CFPLog.Arrival
                 );
+            }
+        }
+
+        // Patch for when pawns are added to any caravan (handles both vanilla and vehicle caravans)
+        [HarmonyPatch(typeof(Caravan), "AddPawn")]
+        static class Caravan_AddPawn_Patch
+        {
+            static void Postfix(Caravan __instance, Pawn p)
+            {
+                if (p == null || !p.RaceProps.Humanlike) return;
+                if (p.Faction != Faction.OfPlayer) return;
+                if (p.foodRestriction == null) return;
+
+                // Apply caravan policy when pawn joins caravan
+                var caravanPolicy = PolicyUtils.GetStoredCaravanPolicy(p);
+                if (caravanPolicy != null)
+                {
+                    p.foodRestriction.CurrentFoodPolicy = caravanPolicy;
+                }
             }
         }
     }
@@ -167,6 +209,86 @@ namespace CaravanFoodPolicies
     }
 
     // --- Logic Utilities ---
+
+    internal static class CaravanUtils
+    {
+        /// <summary>
+        /// Attempts to recache inventory for a pawn's caravan, supporting both vanilla caravans and vehicle caravans.
+        /// </summary>
+        public static void TryRecacheCaravanInventory(Pawn pawn)
+        {
+            if (pawn == null) return;
+
+            // First, try vanilla caravan
+            if (pawn.IsCaravanMember())
+            {
+                Caravan caravan = pawn.GetCaravan();
+                if (caravan != null)
+                {
+                    caravan.RecacheInventory();
+                    return;
+                }
+            }
+
+            // Check if pawn is in a vehicle using reflection (VehicleFramework compatible)
+            try
+            {
+                var vehicleCaravan = TryGetVehicleCaravan(pawn);
+                if (vehicleCaravan != null)
+                {
+                    // Try to call RecacheInventory on vehicle caravan
+                    var recacheMethod = vehicleCaravan.GetType().GetMethod("RecacheInventory", 
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+                    if (recacheMethod != null)
+                    {
+                        recacheMethod.Invoke(vehicleCaravan, null);
+                    }
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                CFPLog.Exception(ex, "Error attempting to detect/recache vehicle caravan inventory");
+            }
+        }
+
+        private static object TryGetVehicleCaravan(Pawn pawn)
+        {
+            if (pawn == null) return null;
+
+            // Try to find the vehicle the pawn is in
+            // VehicleFramework stores pawns in a VehicleCaravan which has a reference to the vehicle
+            try
+            {
+                var parentHolder = pawn.ParentHolder;
+                if (parentHolder != null && parentHolder.GetType().Name == "VehicleCaravan")
+                {
+                    return parentHolder;
+                }
+
+                // Also check if pawn.Map might indicate a vehicle somehow
+                // This is less reliable but worth checking
+                var pawnContainerProperty = pawn.GetType().GetProperty("ParentHolder", 
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+                if (pawnContainerProperty != null)
+                {
+                    var container = pawnContainerProperty.GetValue(pawn);
+                    if (container != null && (container.GetType().Name.Contains("Vehicle") || container.GetType().Name.Contains("Caravan")))
+                    {
+                        return container;
+                    }
+                }
+            }
+            catch
+            {
+                // Silently fail - these reflection calls might not work
+            }
+
+            return null;
+        }
+    }
 
     public static class PolicyUtils
     {
