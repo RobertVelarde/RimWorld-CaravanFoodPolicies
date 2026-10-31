@@ -142,6 +142,30 @@ namespace CaravanFoodPolicies
                 }
             }
         }
+
+        // Patch for when a pawn is removed from a caravan
+        [HarmonyPatch(typeof(Caravan), "RemovePawn")]
+        static class Caravan_RemovePawn_Patch
+        {
+            static void Postfix(Caravan __instance, Pawn p)
+            {
+                if (p == null || !p.RaceProps.Humanlike) return;
+                if (p.Faction != Faction.OfPlayer) return;
+                if (p.foodRestriction == null) return;
+
+                // If caravan is at a player home map, restore home policy
+                var mapParent = Find.WorldObjects.MapParentAt(__instance.Tile);
+                if (mapParent?.Map != null && mapParent.Map.IsPlayerHome)
+                {
+                    var homePolicy = PolicyUtils.GetStoredHomePolicy(p);
+                    if (homePolicy != null && p.foodRestriction.CurrentFoodPolicy != homePolicy)
+                    {
+                        p.foodRestriction.CurrentFoodPolicy = homePolicy;
+                        CFPLog.Arrival(p);
+                    }
+                }
+            }
+        }
     }
 
     internal static class CFPLog
